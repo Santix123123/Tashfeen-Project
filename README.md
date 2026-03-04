@@ -1,2 +1,1 @@
-# Tashfeen-Project
-Machine Learning MidTerm
+# Machine Learning II MidTerm

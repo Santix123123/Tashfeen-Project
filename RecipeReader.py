@@ -1,9 +1,15 @@
 import json
+import random
 import re
 from pathlib import Path
 
+from sklearn.metrics import accuracy_score, classification_report
+from sklearn.model_selection import train_test_split
+from sklearn.tree import DecisionTreeClassifier
+
+
 ROOT_RECIPES_DIR = Path("content/recipes")
-JSON_RECIPES_FILE = Path("tashfeen.json")  # change this to your actual json filename
+JSON_RECIPES_FILE = Path("tashfeen.json")
 
 
 def normalize_text(text):
@@ -12,13 +18,8 @@ def normalize_text(text):
 
     text = text.lower().strip()
     text = text.replace("&", " and ")
-
-    # remove punctuation
     text = re.sub(r"[^a-zA-Z0-9\s]", " ", text)
-
-    # remove extra spaces
     text = re.sub(r"\s+", " ", text).strip()
-
     return text
 
 
@@ -40,7 +41,7 @@ def extract_ingredients_from_markdown(text):
     start_idx = None
     for i, line in enumerate(lines):
         stripped = line.strip()
-        if re.match(r'^(#+\s*)?ingredients\s*:?\s*$', stripped, re.IGNORECASE):
+        if re.match(r"^(#+\s*)?ingredients\s*:?\s*$", stripped, re.IGNORECASE):
             start_idx = i + 1
             break
 
@@ -51,20 +52,20 @@ def extract_ingredients_from_markdown(text):
     for line in lines[start_idx:]:
         stripped = line.strip()
 
-        if re.match(r'^#+\s+', stripped):
+        if re.match(r"^#+\s+", stripped):
             break
 
-        if re.match(r'^(directions|instructions|method|steps)\s*:?\s*$', stripped, re.IGNORECASE):
+        if re.match(r"^(directions|instructions|method|steps)\s*:?\s*$", stripped, re.IGNORECASE):
             break
 
-        bullet_match = re.match(r'^[-*+]\s+(.*)$', stripped)
+        bullet_match = re.match(r"^[-*+]\s+(.*)$", stripped)
         if bullet_match:
             ingredient = bullet_match.group(1).strip()
             if ingredient:
                 ingredients.append(ingredient)
             continue
 
-        numbered_match = re.match(r'^\d+[.)]\s+(.*)$', stripped)
+        numbered_match = re.match(r"^\d+[.)]\s+(.*)$", stripped)
         if numbered_match:
             ingredient = numbered_match.group(1).strip()
             if ingredient:
@@ -77,18 +78,16 @@ def extract_ingredients_from_markdown(text):
 def simplify_markdown_ingredient(text):
     text = normalize_text(text)
 
-    # remove common prep words
     text = re.sub(
-        r'\b(chopped|diced|minced|sliced|fresh|ground|crushed|optional|to taste)\b',
-        '',
-        text
+        r"\b(chopped|diced|minced|sliced|fresh|ground|crushed|optional|to taste)\b",
+        "",
+        text,
     )
 
-    # remove simple leading quantities/units
     text = re.sub(
-        r'^\d+([./-]\d+)?\s*(cup|cups|tbsp|tablespoon|tablespoons|tsp|teaspoon|teaspoons|lb|lbs|oz|g|kg|ml|l|clove|cloves|slice|slices|can|cans|package|packages|pound|gram|grams|ounce|ounces)?\s*',
-        '',
-        text
+        r"^\d+([./-]\d+)?\s*(cup|cups|tbsp|tablespoon|tablespoons|tsp|teaspoon|teaspoons|lb|lbs|oz|g|kg|ml|l|clove|cloves|slice|slices|can|cans|package|packages|pound|gram|grams|ounce|ounces)?\s*",
+        "",
+        text,
     )
 
     text = re.sub(r"\s+", " ", text).strip()
@@ -107,6 +106,8 @@ def read_markdown_recipe(filepath):
         if cleaned:
             normalized_ingredients.append(cleaned)
 
+    normalized_ingredients = list(dict.fromkeys(normalized_ingredients))
+
     return {
         "title": extract_title(text, filepath),
         "author": filepath.parent.name,
@@ -119,6 +120,9 @@ def read_markdown_recipe(filepath):
 
 def load_markdown_recipes(root_dir):
     recipes = []
+
+    if not root_dir.exists():
+        return recipes
 
     for filepath in root_dir.rglob("*"):
         if filepath.is_file() and filepath.suffix.lower() in {".md", ".markdown", ".mdx"}:
@@ -147,6 +151,9 @@ def pick_json_ingredient_name(ingredient_obj):
 
 
 def read_json_recipes(json_path):
+    if not json_path.exists():
+        return []
+
     with open(json_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
@@ -167,143 +174,261 @@ def read_json_recipes(json_path):
             if normalized:
                 ingredients_normalized.append(normalized)
 
-        recipe = {
-            "title": item.get("title", "Untitled"),
-            "author": item.get("author", "unknown"),
-            "source": "json",
-            "file_path": item.get("filename", ""),
-            "ingredients_raw": ingredients_raw,
-            "ingredients_normalized": ingredients_normalized,
-            "tags": item.get("tags", []),
-            "directions": item.get("directions", []),
-        }
+        ingredients_normalized = list(dict.fromkeys(ingredients_normalized))
 
-        if recipe["ingredients_normalized"]:
-            recipes.append(recipe)
+        if ingredients_normalized:
+            recipes.append(
+                {
+                    "title": item.get("title", "Untitled"),
+                    "author": item.get("author", "unknown"),
+                    "source": "json",
+                    "file_path": item.get("filename", ""),
+                    "ingredients_raw": ingredients_raw,
+                    "ingredients_normalized": ingredients_normalized,
+                }
+            )
 
     return recipes
 
 
+def deduplicate_recipes(recipes):
+    """
+    Prefer JSON if the normalized title matches.
+    This is simpler and removes most duplicate markdown/json pairs.
+    """
+    by_title = {}
+
+    for recipe in recipes:
+        title_key = normalize_text(recipe["title"])
+
+        if title_key not in by_title:
+            by_title[title_key] = recipe
+        else:
+            existing = by_title[title_key]
+            if existing["source"] == "markdown" and recipe["source"] == "json":
+                by_title[title_key] = recipe
+
+    return list(by_title.values())
+
+
+def load_all_recipes():
+    markdown_recipes = load_markdown_recipes(ROOT_RECIPES_DIR)
+    json_recipes = read_json_recipes(JSON_RECIPES_FILE)
+
+    print(f"Loaded {len(markdown_recipes)} markdown recipes.")
+    print(f"Loaded {len(json_recipes)} json recipes.")
+
+    combined = markdown_recipes + json_recipes
+    combined = deduplicate_recipes(combined)
+
+    print(f"Using {len(combined)} recipes after deduplication.")
+    return combined
+
+
 def parse_user_ingredients(user_input):
-    parts = user_input.split(",")
-    cleaned = []
-
-    for part in parts:
-        normalized = normalize_text(part)
-        if normalized:
-            cleaned.append(normalized)
-
-    return cleaned
+    return [normalize_text(x) for x in user_input.split(",") if normalize_text(x)]
 
 
 def ingredient_matches(user_ing, recipe_ing):
-    return (
-        user_ing == recipe_ing
-        or user_ing in recipe_ing
-        or recipe_ing in user_ing
-    )
+    """
+    Stricter matching than plain substring matching.
+    Allows:
+    - rice <-> basmati rice
+    - olive oil <-> extra virgin olive oil
+    - garlic <-> garlic cloves
+
+    But is less loose than raw substring matching.
+    """
+    user_ing = normalize_text(user_ing)
+    recipe_ing = normalize_text(recipe_ing)
+
+    if not user_ing or not recipe_ing:
+        return False
+
+    if user_ing == recipe_ing:
+        return True
+
+    user_words = set(user_ing.split())
+    recipe_words = set(recipe_ing.split())
+
+    if not user_words or not recipe_words:
+        return False
+
+    if user_words.issubset(recipe_words) or recipe_words.issubset(user_words):
+        return True
+
+    return False
 
 
-def score_recipe(user_ingredients, recipe):
-    recipe_ingredients = recipe["ingredients_normalized"]
-
-    matched = []
-    recipe_matches = []
+def compute_features(user_ingredients, recipe_ingredients):
+    matched_user = set()
+    matched_recipe = set()
 
     for user_ing in user_ingredients:
         for recipe_ing in recipe_ingredients:
             if ingredient_matches(user_ing, recipe_ing):
-                matched.append(user_ing)
-                recipe_matches.append(recipe_ing)
+                matched_user.add(user_ing)
+                matched_recipe.add(recipe_ing)
                 break
 
-    matched = list(dict.fromkeys(matched))
-    recipe_matches = list(dict.fromkeys(recipe_matches))
+    overlap_count = len(matched_user)
+    missing_count = len(user_ingredients) - overlap_count
+    extra_count = len(recipe_ingredients) - len(matched_recipe)
 
-    missing_user = [u for u in user_ingredients if u not in matched]
-    extra_recipe = [r for r in recipe_ingredients if r not in recipe_matches]
+    user_coverage = overlap_count / len(user_ingredients) if user_ingredients else 0.0
+    recipe_coverage = overlap_count / len(recipe_ingredients) if recipe_ingredients else 0.0
 
-    # simple ranking:
-    # reward matched ingredients
-    # slightly penalize recipes needing lots of extras
-    score = len(matched) - (0.15 * len(extra_recipe))
+    union_count = len(set(user_ingredients).union(set(recipe_ingredients)))
+    jaccard = overlap_count / union_count if union_count else 0.0
 
     return {
-        "score": score,
-        "matched_user": matched,
-        "matched_recipe": recipe_matches,
-        "missing_user": missing_user,
-        "extra_recipe": extra_recipe,
+        "overlap_count": overlap_count,
+        "missing_count": missing_count,
+        "extra_count": extra_count,
+        "user_coverage": user_coverage,
+        "recipe_coverage": recipe_coverage,
+        "jaccard": jaccard,
     }
 
 
-def find_matching_recipes(user_ingredients, recipes, top_n=5):
+def feature_vector(feature_dict):
+    return [
+        feature_dict["overlap_count"],
+        feature_dict["missing_count"],
+        feature_dict["extra_count"],
+        feature_dict["user_coverage"],
+        feature_dict["recipe_coverage"],
+        feature_dict["jaccard"],
+    ]
+
+
+def generate_positive_query(recipe_ingredients):
+    n = len(recipe_ingredients)
+
+    if n == 1:
+        return recipe_ingredients[:]
+
+    # Allow smaller queries so 1-ingredient and 2-ingredient queries can appear in training.
+    min_k = 1
+    max_k = n
+    k = random.randint(min_k, max_k)
+    return random.sample(recipe_ingredients, k)
+
+
+def build_training_data(recipes, positives_per_recipe=6, negatives_per_positive=3):
+    X = []
+    y = []
+
+    if len(recipes) < 2:
+        return X, y
+
+    for i, recipe in enumerate(recipes):
+        recipe_ingredients = recipe["ingredients_normalized"]
+
+        for _ in range(positives_per_recipe):
+            query = generate_positive_query(recipe_ingredients)
+
+            pos_features = compute_features(query, recipe_ingredients)
+            X.append(feature_vector(pos_features))
+            y.append(1)
+
+            other_indices = [j for j in range(len(recipes)) if j != i]
+            sampled_negatives = random.sample(
+                other_indices,
+                min(negatives_per_positive, len(other_indices)),
+            )
+
+            for neg_idx in sampled_negatives:
+                neg_recipe = recipes[neg_idx]
+                neg_features = compute_features(query, neg_recipe["ingredients_normalized"])
+                X.append(feature_vector(neg_features))
+                y.append(0)
+
+    return X, y
+
+
+def train_decision_tree(recipes):
+    X, y = build_training_data(recipes)
+
+    if not X or not y:
+        raise ValueError("Not enough recipe data to train the model.")
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
+
+    model = DecisionTreeClassifier(max_depth=6, random_state=42)
+    model.fit(X_train, y_train)
+
+    y_pred = model.predict(X_test)
+
+    print("\nModel Evaluation")
+    print("----------------")
+    print("Accuracy:", round(accuracy_score(y_test, y_pred), 4))
+    print(classification_report(y_test, y_pred, digits=4))
+
+    return model
+
+
+def rank_recipes_with_tree(user_ingredients, recipes, model, top_n=5):
     results = []
 
     for recipe in recipes:
-        result = score_recipe(user_ingredients, recipe)
+        features = compute_features(user_ingredients, recipe["ingredients_normalized"])
+        vector = feature_vector(features)
 
-        if result["matched_user"]:
-            results.append({
+        prob = model.predict_proba([vector])[0][1]
+
+        manual_score = (
+            2.0 * features["overlap_count"]
+            - 1.0 * features["missing_count"]
+            - 0.25 * features["extra_count"]
+            + 2.0 * features["jaccard"]
+        )
+
+        combined_score = prob + manual_score
+
+        results.append(
+            {
                 "title": recipe["title"],
                 "author": recipe["author"],
                 "source": recipe["source"],
                 "file_path": recipe["file_path"],
                 "ingredients_raw": recipe["ingredients_raw"],
                 "ingredients_normalized": recipe["ingredients_normalized"],
-                "score": result["score"],
-                "matched_user": result["matched_user"],
-                "matched_recipe": result["matched_recipe"],
-                "missing_user": result["missing_user"],
-                "extra_recipe": result["extra_recipe"],
-            })
+                "probability": prob,
+                "manual_score": manual_score,
+                "combined_score": combined_score,
+                "features": features,
+            }
+        )
 
     results.sort(
-        key=lambda x: (
-            -x["score"],
-            len(x["missing_user"]),
-            len(x["extra_recipe"]),
-            x["title"].lower()
+        key=lambda r: (
+            -r["combined_score"],
+            -r["features"]["overlap_count"],
+            r["features"]["extra_count"],
+            r["title"].lower(),
         )
     )
 
     return results[:top_n]
 
 
-def load_all_recipes():
-    recipes = []
-
-    if ROOT_RECIPES_DIR.exists():
-        markdown_recipes = load_markdown_recipes(ROOT_RECIPES_DIR)
-        recipes.extend(markdown_recipes)
-        print(f"Loaded {len(markdown_recipes)} markdown recipes.")
-
-    if JSON_RECIPES_FILE.exists():
-        json_recipes = read_json_recipes(JSON_RECIPES_FILE)
-        recipes.extend(json_recipes)
-        print(f"Loaded {len(json_recipes)} json recipes.")
-
-    return recipes
-
-
 def print_recipe_result(recipe, index):
+    f = recipe["features"]
+
     print(f"{index}. {recipe['title']}")
     print(f"   Author: {recipe['author']}")
     print(f"   Source: {recipe['source']}")
-    print(f"   Score: {recipe['score']:.2f}")
-    print(f"   Matched input: {', '.join(recipe['matched_user']) if recipe['matched_user'] else 'None'}")
-    print(f"   Matching recipe ingredients: {', '.join(recipe['matched_recipe']) if recipe['matched_recipe'] else 'None'}")
-
-    if recipe["missing_user"]:
-        print(f"   Your unmatched ingredients: {', '.join(recipe['missing_user'])}")
-
-    if recipe["extra_recipe"]:
-        print(f"   Extra recipe ingredients needed: {', '.join(recipe['extra_recipe'])}")
-
-    print("   Full recipe ingredients:")
-    for ing in recipe["ingredients_raw"]:
-        print(f"   - {ing}")
-
+    print(f"   Match probability: {recipe['probability']:.4f}")
+    print(f"   Manual score: {recipe['manual_score']:.4f}")
+    print(f"   Combined score: {recipe['combined_score']:.4f}")
+    print(f"   Overlap count: {f['overlap_count']}")
+    print(f"   Missing count: {f['missing_count']}")
+    print(f"   Extra count: {f['extra_count']}")
+    print(f"   Jaccard: {f['jaccard']:.4f}")
+    print(f"   Ingredients: {', '.join(recipe['ingredients_normalized'])}")
     print(f"   File: {recipe['file_path']}")
     print()
 
@@ -311,28 +436,30 @@ def print_recipe_result(recipe, index):
 def main():
     print("Loading recipes...")
     recipes = load_all_recipes()
-    print(f"Total recipes loaded: {len(recipes)}\n")
 
     if not recipes:
         print("No recipes found.")
         return
 
-    user_input = input("Enter ingredients separated by commas: ")
-    user_ingredients = parse_user_ingredients(user_input)
+    print("\nTraining decision tree...")
+    model = train_decision_tree(recipes)
 
-    if not user_ingredients:
-        print("No valid ingredients entered.")
-        return
+    while True:
+        user_input = input("\nEnter ingredients separated by commas (or type quit): ").strip()
 
-    matches = find_matching_recipes(user_ingredients, recipes, top_n=5)
+        if user_input.lower() == "quit":
+            break
 
-    if not matches:
-        print("\nNo matching recipes found.")
-        return
+        user_ingredients = parse_user_ingredients(user_input)
+        if not user_ingredients:
+            print("No valid ingredients entered.")
+            continue
 
-    print("\nTop matching recipes:\n")
-    for i, recipe in enumerate(matches, start=1):
-        print_recipe_result(recipe, i)
+        matches = rank_recipes_with_tree(user_ingredients, recipes, model, top_n=5)
+
+        print("\nTop matching recipes:\n")
+        for i, recipe in enumerate(matches, start=1):
+            print_recipe_result(recipe, i)
 
 
 if __name__ == "__main__":

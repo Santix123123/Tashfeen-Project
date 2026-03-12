@@ -3,6 +3,7 @@ import random
 import re
 from pathlib import Path
 
+from flask import Flask, jsonify, request, send_from_directory
 from sklearn.metrics import accuracy_score, classification_report
 from sklearn.model_selection import train_test_split
 from sklearn.tree import DecisionTreeClassifier
@@ -10,6 +11,7 @@ from sklearn.tree import DecisionTreeClassifier
 
 ROOT_RECIPES_DIR = Path("content/recipes")
 JSON_RECIPES_FILE = Path("tashfeen.json")
+BASE_DIR = Path(__file__).resolve().parent
 
 
 def normalize_text(text):
@@ -192,10 +194,6 @@ def read_json_recipes(json_path):
 
 
 def deduplicate_recipes(recipes):
-    """
-    Prefer JSON if the normalized title matches.
-    This is simpler and removes most duplicate markdown/json pairs.
-    """
     by_title = {}
 
     for recipe in recipes:
@@ -230,15 +228,6 @@ def parse_user_ingredients(user_input):
 
 
 def ingredient_matches(user_ing, recipe_ing):
-    """
-    Stricter matching than plain substring matching.
-    Allows:
-    - rice <-> basmati rice
-    - olive oil <-> extra virgin olive oil
-    - garlic <-> garlic cloves
-
-    But is less loose than raw substring matching.
-    """
     user_ing = normalize_text(user_ing)
     recipe_ing = normalize_text(recipe_ing)
 
@@ -308,7 +297,6 @@ def generate_positive_query(recipe_ingredients):
     if n == 1:
         return recipe_ingredients[:]
 
-    # Allow smaller queries so 1-ingredient and 2-ingredient queries can appear in training.
     min_k = 1
     max_k = n
     k = random.randint(min_k, max_k)
@@ -370,7 +358,7 @@ def train_decision_tree(recipes):
     return model
 
 
-def rank_recipes_with_tree(user_ingredients, recipes, model, top_n=5):
+def rank_recipes_with_tree(user_ingredients, recipes, model, top_n=12):
     results = []
 
     for recipe in recipes:
@@ -396,9 +384,9 @@ def rank_recipes_with_tree(user_ingredients, recipes, model, top_n=5):
                 "file_path": recipe["file_path"],
                 "ingredients_raw": recipe["ingredients_raw"],
                 "ingredients_normalized": recipe["ingredients_normalized"],
-                "probability": prob,
-                "manual_score": manual_score,
-                "combined_score": combined_score,
+                "probability": float(prob),
+                "manual_score": float(manual_score),
+                "combined_score": float(combined_score),
                 "features": features,
             }
         )
@@ -415,52 +403,54 @@ def rank_recipes_with_tree(user_ingredients, recipes, model, top_n=5):
     return results[:top_n]
 
 
-def print_recipe_result(recipe, index):
-    f = recipe["features"]
+app = Flask(__name__, static_folder=".", static_url_path="")
 
-    print(f"{index}. {recipe['title']}")
-    print(f"   Author: {recipe['author']}")
-    print(f"   Source: {recipe['source']}")
-    print(f"   Match probability: {recipe['probability']:.4f}")
-    print(f"   Manual score: {recipe['manual_score']:.4f}")
-    print(f"   Combined score: {recipe['combined_score']:.4f}")
-    print(f"   Overlap count: {f['overlap_count']}")
-    print(f"   Missing count: {f['missing_count']}")
-    print(f"   Extra count: {f['extra_count']}")
-    print(f"   Jaccard: {f['jaccard']:.4f}")
-    print(f"   Ingredients: {', '.join(recipe['ingredients_normalized'])}")
-    print(f"   File: {recipe['file_path']}")
-    print()
+RECIPES = load_all_recipes()
+MODEL = train_decision_tree(RECIPES) if RECIPES else None
 
 
-def main():
-    print("Loading recipes...")
-    recipes = load_all_recipes()
+@app.get("/")
+def index():
+    return send_from_directory(".", "recipe_reader_webpage.html")
 
-    if not recipes:
-        print("No recipes found.")
-        return
 
-    print("\nTraining decision tree...")
-    model = train_decision_tree(recipes)
+@app.get("/search")
+def search():
+    query = request.args.get("q", "").strip()
 
-    while True:
-        user_input = input("\nEnter ingredients separated by commas (or type quit): ").strip()
+    if not query:
+        return jsonify({"results": [], "message": "Enter ingredients to search."})
 
-        if user_input.lower() == "quit":
-            break
+    # Title match layer
+    normalized_query = normalize_text(query)
+    title_matches = [
+        recipe for recipe in RECIPES
+        if normalized_query in normalize_text(recipe["title"])
+    ]
 
-        user_ingredients = parse_user_ingredients(user_input)
-        if not user_ingredients:
-            print("No valid ingredients entered.")
-            continue
+    # Ingredient ranking layer
+    user_ingredients = parse_user_ingredients(query)
+    ranked_matches = []
+    if user_ingredients and MODEL is not None:
+        ranked_matches = rank_recipes_with_tree(user_ingredients, RECIPES, MODEL, top_n=12)
 
-        matches = rank_recipes_with_tree(user_ingredients, recipes, model, top_n=5)
+    # Merge title matches + ranked ingredient matches
+    seen = set()
+    final_results = []
 
-        print("\nTop matching recipes:\n")
-        for i, recipe in enumerate(matches, start=1):
-            print_recipe_result(recipe, i)
+    for recipe in title_matches + ranked_matches:
+        key = normalize_text(recipe["title"])
+        if key not in seen:
+            seen.add(key)
+            final_results.append(recipe)
+
+    return jsonify(
+        {
+            "results": final_results[:12],
+            "message": f"Found {len(final_results[:12])} matching recipes."
+        }
+    )
 
 
 if __name__ == "__main__":
-    main()
+    app.run(debug=True)

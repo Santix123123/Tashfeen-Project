@@ -427,6 +427,7 @@ def rank_recipes_with_tree(user_ingredients, recipes, model, top_n=12):
 
     return results[:top_n]
 
+
 app = Flask(__name__, static_folder=".", static_url_path="")
 
 RECIPES = load_all_recipes()
@@ -483,4 +484,4 @@ if __name__ == "__main__":
 
     plot_feature_importance(model)
 
-    app.run(debug=True)
+    app.run(debug=True, use_reloader=False)

@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Recipe Reader</title>
+  <style>
+    :root {
+      --bg: #f7f4ee;
+      --bg-accent: #fffaf2;
+      --surface: rgba(255, 255, 255, 0.82);
+      --surface-strong: #ffffff;
+      --text: #2f241d;
+      --muted: #75665b;
+      --line: rgba(93, 67, 47, 0.12);
+      --accent: #c96f3b;
+      --accent-dark: #a65628;
+      --chip: #f4e6d7;
+      --shadow: 0 18px 40px rgba(88, 58, 34, 0.12);
+      --radius: 24px;
+      --radius-sm: 16px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Inter, "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, #fff3df 0%, transparent 28%),
+        radial-gradient(circle at bottom right, #f8e8d4 0%, transparent 24%),
+        linear-gradient(180deg, var(--bg-accent) 0%, var(--bg) 100%);
+      min-height: 100vh;
+    }
+
+    .container {
+      width: min(1100px, calc(100% - 32px));
+      margin: 0 auto;
+    }
+
+    .hero {
+      padding: 56px 0 28px;
+      text-align: center;
+    }
+
+    .hero h1 {
+      margin: 0;
+      font-size: clamp(2.3rem, 5vw, 4rem);
+      letter-spacing: -0.04em;
+    }
+
+    .hero p {
+      margin: 14px auto 0;
+      max-width: 680px;
+      font-size: 1.05rem;
+      line-height: 1.7;
+      color: var(--muted);
+    }
+
+    .search-panel {
+      margin: 28px auto 0;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      backdrop-filter: blur(14px);
+      box-shadow: var(--shadow);
+      border-radius: 999px;
+      padding: 10px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      max-width: 760px;
+    }
+
+    .search-panel input {
+      flex: 1;
+      border: 0;
+      background: transparent;
+      padding: 16px 18px;
+      font-size: 1rem;
+      color: var(--text);
+      outline: none;
+    }
+
+    .search-panel input::placeholder {
+      color: #9b8c81;
+    }
+
+    .search-panel button {
+      border: 0;
+      background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+      color: white;
+      padding: 14px 22px;
+      border-radius: 999px;
+      font-size: 0.98rem;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 10px 20px rgba(201, 111, 59, 0.25);
+      transition: transform 0.18s ease, filter 0.18s ease;
+    }
+
+    .search-panel button:hover {
+      transform: translateY(-1px);
+      filter: brightness(1.03);
+    }
+
+    .search-hint {
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .results-section {
+      padding: 18px 0 54px;
+    }
+
+    .results-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    .results-header h2 {
+      margin: 0;
+      font-size: 1.45rem;
+    }
+
+    .results-count {
+      color: var(--muted);
+      font-size: 0.96rem;
+    }
+
+    .results-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+
+    .recipe-card {
+      background: var(--surface-strong);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: var(--shadow);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .recipe-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 24px 50px rgba(88, 58, 34, 0.16);
+    }
+
+    .recipe-image {
+      height: 190px;
+      background:
+        linear-gradient(135deg, rgba(201,111,59,0.18), rgba(240,193,141,0.22)),
+        radial-gradient(circle at top right, rgba(255,255,255,0.75), transparent 34%),
+        #ead7c3;
+      display: flex;
+      align-items: end;
+      justify-content: start;
+      padding: 18px;
+    }
+
+    .recipe-badge {
+      background: rgba(255,255,255,0.84);
+      border: 1px solid rgba(93, 67, 47, 0.08);
+      color: var(--accent-dark);
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      font-weight: 700;
+    }
+
+    .recipe-content {
+      padding: 20px;
+    }
+
+    .recipe-content h3 {
+      margin: 0 0 10px;
+      font-size: 1.15rem;
+      line-height: 1.35;
+    }
+
+    .recipe-content p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.65;
+      font-size: 0.96rem;
+    }
+
+    .recipe-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 16px;
+    }
+
+    .meta-chip {
+      background: var(--chip);
+      color: #6e4e38;
+      padding: 8px 11px;
+      border-radius: 999px;
+      font-size: 0.84rem;
+      font-weight: 600;
+    }
+
+    .recipe-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .tag {
+      font-size: 0.82rem;
+      color: var(--accent-dark);
+      background: rgba(201, 111, 59, 0.1);
+      padding: 7px 10px;
+      border-radius: 999px;
+      font-weight: 600;
+    }
+
+    .empty-state {
+      display: none;
+      padding: 42px 20px;
+      text-align: center;
+      border-radius: var(--radius);
+      background: rgba(255,255,255,0.72);
+      border: 1px dashed var(--line);
+      color: var(--muted);
+      box-shadow: var(--shadow);
+    }
+
+    @media (max-width: 980px) {
+      .results-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    @media (max-width: 640px) {
+      .hero {
+        padding-top: 36px;
+      }
+
+      .search-panel {
+        border-radius: 24px;
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .search-panel button {
+        width: 100%;
+      }
+
+      .results-header {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .results-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero">
+      <div class="container">
+        <h1>Recipe Search</h1>
+        <p>
+          Search your recipe collection with a simple bar and show the matching recipes in a clean,
+          polished card layout.
+        </p>
+
+        <form class="search-panel" id="searchForm">
+          <input
+            id="searchInput"
+            type="text"
+            placeholder="Search by recipe name or ingredient..."
+          />
+          <button type="submit">Search</button>
+        </form>
+
+        <div class="search-hint">
+          Example searches: pasta, bacon, potato, mushroom
+        </div>
+
+        <div class="search-hint" id="statusMessage"></div>
+      </div>
+    </section>
+
+    <section class="results-section">
+      <div class="container">
+        <div class="results-header">
+          <h2>Recipes</h2>
+          <div class="results-count" id="resultsCount">Showing 0 recipes</div>
+        </div>
+
+        <div class="empty-state" id="emptyState">
+          Search for something to see matching recipes here.
+        </div>
+
+        <div class="results-grid" id="resultsGrid"></div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const searchForm = document.getElementById('searchForm');
+    const searchInput = document.getElementById('searchInput');
+    const resultsGrid = document.getElementById('resultsGrid');
+    const resultsCount = document.getElementById('resultsCount');
+    const emptyState = document.getElementById('emptyState');
+    const statusMessage = document.getElementById('statusMessage');
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function renderRecipes(items) {
+      resultsGrid.innerHTML = '';
+
+      if (!items.length) {
+        emptyState.style.display = 'block';
+        resultsCount.textContent = 'Showing 0 recipes';
+        return;
+      }
+
+      emptyState.style.display = 'none';
+      resultsCount.textContent = `Showing ${items.length} recipe${items.length === 1 ? '' : 's'}`;
+
+      items.forEach(recipe => {
+        const ingredients = Array.isArray(recipe.ingredients_normalized) ? recipe.ingredients_normalized : [];
+        const features = recipe.features || {};
+        const probability = typeof recipe.probability === 'number'
+          ? `${Math.round(recipe.probability * 100)}% match`
+          : (recipe.source ? recipe.source : 'Recipe');
+
+        const subtitle = recipe.author
+          ? `By ${escapeHtml(recipe.author)}`
+          : 'Recipe result';
+
+        const metaBits = [
+          features.overlap_count !== undefined ? `✅ ${features.overlap_count} matched` : null,
+          features.missing_count !== undefined ? `❌ ${features.missing_count} missing` : null,
+          ingredients.length ? `🧂 ${ingredients.length} ingredients` : null
+        ].filter(Boolean);
+
+        const card = document.createElement('article');
+        card.className = 'recipe-card';
+        card.innerHTML = `
+          <div class="recipe-image">
+            <div class="recipe-badge">${escapeHtml(probability)}</div>
+          </div>
+          <div class="recipe-content">
+            <h3>${escapeHtml(recipe.title || 'Untitled Recipe')}</h3>
+            <p>${subtitle}</p>
+
+            <div class="recipe-meta">
+              ${metaBits.map(bit => `<span class="meta-chip">${escapeHtml(bit)}</span>`).join('')}
+            </div>
+
+            <div class="recipe-tags">
+              ${ingredients.slice(0, 8).map(ingredient => `<span class="tag">${escapeHtml(ingredient)}</span>`).join('')}
+            </div>
+          </div>
+        `;
+        resultsGrid.appendChild(card);
+      });
+    }
+
+    async function searchRecipes(query) {
+      const value = query.trim();
+
+      if (!value) {
+        resultsGrid.innerHTML = '';
+        emptyState.style.display = 'block';
+        resultsCount.textContent = 'Showing 0 recipes';
+        statusMessage.textContent = '';
+        return;
+      }
+
+      statusMessage.textContent = 'Searching recipes...';
+      resultsGrid.innerHTML = '';
+      emptyState.style.display = 'none';
+      resultsCount.textContent = 'Searching...';
+
+      try {
+        const response = await fetch(`/search?q=${encodeURIComponent(value)}`);
+
+        if (!response.ok) {
+          throw new Error(`Request failed with status ${response.status}`);
+        }
+
+        const data = await response.json();
+        const items = Array.isArray(data.results) ? data.results : [];
+        renderRecipes(items);
+        statusMessage.textContent = data.message || '';
+      } catch (error) {
+        resultsGrid.innerHTML = '';
+        emptyState.style.display = 'block';
+        emptyState.textContent = 'Could not reach RecipeReader.py. Make sure the Python server is running.';
+        resultsCount.textContent = 'Showing 0 recipes';
+        statusMessage.textContent = error.message;
+      }
+    }
+
+    searchForm.addEventListener('submit', event => {
+      event.preventDefault();
+      searchRecipes(searchInput.value);
+    });
+
+    emptyState.style.display = 'block';
+  </script>
+</body>
+</html>

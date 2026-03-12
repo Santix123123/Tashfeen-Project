@@ -7,6 +7,8 @@ from flask import Flask, jsonify, request, send_from_directory
 from sklearn.metrics import accuracy_score, classification_report
 from sklearn.model_selection import train_test_split
 from sklearn.tree import DecisionTreeClassifier
+from sklearn.metrics import ConfusionMatrixDisplay
+import matplotlib.pyplot as plt
 
 
 ROOT_RECIPES_DIR = Path("content/recipes")
@@ -355,7 +357,30 @@ def train_decision_tree(recipes):
     print("Accuracy:", round(accuracy_score(y_test, y_pred), 4))
     print(classification_report(y_test, y_pred, digits=4))
 
+    ConfusionMatrixDisplay.from_predictions(y_test, y_pred)
+    plt.title("Confusion Matrix")
+    plt.show()
+
     return model
+
+def plot_feature_importance(model):
+    features = [
+        "overlap_count",
+        "missing_count",
+        "extra_count",
+        "user_coverage",
+        "recipe_coverage",
+        "jaccard"
+    ]
+
+    importance = model.feature_importances_
+
+    plt.figure(figsize=(8, 5))
+    plt.barh(features, importance)
+    plt.title("Decision Tree Feature Importance")
+    plt.xlabel("Importance")
+    plt.tight_layout()
+    plt.show()
 
 
 def rank_recipes_with_tree(user_ingredients, recipes, model, top_n=12):
@@ -401,7 +426,6 @@ def rank_recipes_with_tree(user_ingredients, recipes, model, top_n=12):
     )
 
     return results[:top_n]
-
 
 app = Flask(__name__, static_folder=".", static_url_path="")
 
@@ -453,4 +477,10 @@ def search():
 
 
 if __name__ == "__main__":
+    recipes = load_all_recipes()
+
+    model = train_decision_tree(recipes)
+
+    plot_feature_importance(model)
+
     app.run(debug=True)

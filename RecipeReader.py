@@ -446,20 +446,17 @@ def search():
     if not query:
         return jsonify({"results": [], "message": "Enter ingredients to search."})
 
-    # Title match layer
     normalized_query = normalize_text(query)
     title_matches = [
         recipe for recipe in RECIPES
         if normalized_query in normalize_text(recipe["title"])
     ]
 
-    # Ingredient ranking layer
     user_ingredients = parse_user_ingredients(query)
     ranked_matches = []
     if user_ingredients and MODEL is not None:
         ranked_matches = rank_recipes_with_tree(user_ingredients, RECIPES, MODEL, top_n=12)
 
-    # Merge title matches + ranked ingredient matches
     seen = set()
     final_results = []
 

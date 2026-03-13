@@ -357,9 +357,9 @@ def train_decision_tree(recipes):
     print("Accuracy:", round(accuracy_score(y_test, y_pred), 4))
     print(classification_report(y_test, y_pred, digits=4))
 
-    ConfusionMatrixDisplay.from_predictions(y_test, y_pred)
-    plt.title("Confusion Matrix")
-    plt.show()
+    #ConfusionMatrixDisplay.from_predictions(y_test, y_pred)
+    #plt.title("Confusion Matrix")
+    #plt.show()
 
     return model
 
@@ -477,8 +477,8 @@ def search():
 if __name__ == "__main__":
     recipes = load_all_recipes()
 
-    model = train_decision_tree(recipes)
+    #model = train_decision_tree(recipes)
 
-    plot_feature_importance(model)
+    #plot_feature_importance(model)
 
     app.run(debug=True, use_reloader=False)
